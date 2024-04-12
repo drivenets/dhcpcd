@@ -248,6 +248,8 @@ struct dhcpcd_ctx {
 	struct dev *dev;
 	void *dev_handle;
 #endif
+
+	uint32_t routingtableid;
 };
 
 #ifdef USE_SIGNALS

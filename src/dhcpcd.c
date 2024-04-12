@@ -115,12 +115,13 @@ printf("usage: "PACKAGE"\t[-146ABbDdEGgHJKLMNPpqTV]\n"
 	"\t\t[-O, --nooption option] [-o, --option option]\n"
 	"\t\t[-Q, --require option] [-r, --request address]\n"
 	"\t\t[-S, --static value]\n"
-	"\t\t[-s, --inform address[/cidr[/broadcast_address]]]\n [--inform6]"
+	"\t\t[-s, --inform address[/cidr[/broadcast_address]]] [--inform6]\n"
 	"\t\t[-t, --timeout seconds] [-u, --userclass class]\n"
 	"\t\t[-v, --vendor code, value] [-W, --whitelist address[/cidr]] [-w]\n"
-	"\t\t[--waitip [4 | 6]] [-y, --reboot seconds]\n"
+	"\t\t[-w, --waitip [4 | 6]] [-y, --reboot seconds]\n"
 	"\t\t[-X, --blacklist address[/cidr]] [-Z, --denyinterfaces pattern]\n"
 	"\t\t[-z, --allowinterfaces pattern] [--inactive] [interface] [...]\n"
+	"\t\t[--routingtableid routingtableid]\n"
 	"       "PACKAGE"\t-n, --rebind [interface]\n"
 	"       "PACKAGE"\t-k, --release [interface]\n"
 	"       "PACKAGE"\t-U, --dumplease interface\n"
@@ -2091,6 +2092,7 @@ main(int argc, char **argv, char **envp)
 			usage();
 		goto exit_failure;
 	}
+
 	if (i == 2) {
 		printf("Interface options:\n");
 		if (optind == argc - 1) {

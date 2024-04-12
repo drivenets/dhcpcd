@@ -183,6 +183,7 @@
 #define O_CONFIGURE		O_BASE + 50
 #define O_NOCONFIGURE		O_BASE + 51
 #define O_RANDOMISE_HWADDR	O_BASE + 52
+#define O_ROUTING_TABLE_ID  O_BASE + 53
 
 extern const struct option cf_options[];
 
@@ -283,6 +284,8 @@ struct if_options {
 	size_t vivso_override_len;
 
 	struct auth auth;
+
+	uint32_t routingtableid;
 };
 
 struct if_options *read_config(struct dhcpcd_ctx *,

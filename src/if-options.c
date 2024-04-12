@@ -168,6 +168,7 @@ const struct option cf_options[] = {
 	{"link_rcvbuf",     required_argument, NULL, O_LINK_RCVBUF},
 	{"configure",       no_argument,       NULL, O_CONFIGURE},
 	{"noconfigure",     no_argument,       NULL, O_NOCONFIGURE},
+	{"routingtableid",  required_argument, NULL, O_ROUTING_TABLE_ID},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -2337,6 +2338,18 @@ invalid_token:
 	case O_NOCONFIGURE:
 		ifo->options &= ~DHCPCD_CONFIGURE;
 		break;
+	case O_ROUTING_TABLE_ID:
+		ARG_REQUIRED;
+		fp = strwhite(arg);
+		if (fp)
+			*fp++ = '\0';
+		u = (uint32_t)strtou(arg, NULL, 0, 0, UINT32_MAX, &e);
+		if (e) {
+			logerrx("invalid code: %s", arg);
+			return -1;
+		}
+		ifo->routingtableid = (uint32_t) u;
+		break;
 	default:
 		return 0;
 	}
@@ -2434,6 +2447,8 @@ default_config(struct dhcpcd_ctx *ctx)
 		ifo->options |= DHCPCD_PERSISTENT;
 	if (ctx->options & DHCPCD_SLAACPRIVATE)
 		ifo->options |= DHCPCD_SLAACPRIVATE;
+
+	ifo->routingtableid = RT_TABLE_MAIN;
 
 	return ifo;
 }
