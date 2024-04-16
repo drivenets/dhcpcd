@@ -55,6 +55,7 @@
 #include "ipv4.h"
 #include "logerr.h"
 #include "sa.h"
+#include "eloop.h"
 
 #define	IN_CONFIG_BLOCK(ifo)	((ifo)->options & DHCPCD_FORKED)
 #define	SET_CONFIG_BLOCK(ifo)	((ifo)->options |= DHCPCD_FORKED)
@@ -169,6 +170,7 @@ const struct option cf_options[] = {
 	{"configure",       no_argument,       NULL, O_CONFIGURE},
 	{"noconfigure",     no_argument,       NULL, O_NOCONFIGURE},
 	{"routingtableid",  required_argument, NULL, O_ROUTING_TABLE_ID},
+	{"maxbackofftimer", required_argument, NULL, O_MAX_BACKOFF_TIMER},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -2348,7 +2350,19 @@ invalid_token:
 			logerrx("invalid code: %s", arg);
 			return -1;
 		}
-		ifo->routingtableid = (uint32_t) u;
+		ctx->routingtableid = (uint32_t)u;
+		break;
+	case O_MAX_BACKOFF_TIMER:
+		ARG_REQUIRED;
+		fp = strwhite(arg);
+		if (fp)
+			*fp++ = '\0';
+		u = (uint32_t)strtou(arg, NULL, 0, 0, UINT32_MAX, &e);
+		if (e) {
+			logerrx("invalid code: %s", arg);
+			return -1;
+		}
+		ctx->maxbackofftimer = (uint32_t)u * MSEC_PER_SEC;
 		break;
 	default:
 		return 0;
@@ -2448,7 +2462,8 @@ default_config(struct dhcpcd_ctx *ctx)
 	if (ctx->options & DHCPCD_SLAACPRIVATE)
 		ifo->options |= DHCPCD_SLAACPRIVATE;
 
-	ifo->routingtableid = RT_TABLE_MAIN;
+	ctx->routingtableid = RT_TABLE_MAIN;
+	ctx->maxbackofftimer = DEFAULT_MAX_BACKOFF_TIMER * MSEC_PER_SEC;
 
 	return ifo;
 }

@@ -1407,6 +1407,9 @@ sent:
 		state->RT = RT * 2;
 		if (state->RT < RT) /* Check overflow */
 			state->RT = RT;
+		if (state->RT > ctx->maxbackofftimer) {
+			state->RT = ctx->maxbackofftimer;
+		}
 		if (state->MRC == 0 || state->RTC < state->MRC)
 			eloop_timeout_add_msec(ctx->eloop,
 			    RT, callback, ifp);
