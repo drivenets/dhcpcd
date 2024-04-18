@@ -4106,7 +4106,7 @@ dhcp6_freedrop(struct interface *ifp, int drop, const char *reason)
 			    state->state != DH6S_INFORMED)
 			{
 				dhcp6_startrelease(ifp);
-				return;
+				goto release_addr;
 			}
 			dhcp_unlink(ifp->ctx, state->leasefile);
 		}
@@ -4123,6 +4123,7 @@ dhcp6_freedrop(struct interface *ifp, int drop, const char *reason)
 		}
 #endif
 
+release_addr:
 		dhcp6_freedrop_addrs(ifp, drop, NULL);
 		free(state->old);
 		state->old = state->new;
