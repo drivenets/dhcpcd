@@ -248,6 +248,9 @@ struct dhcpcd_ctx {
 	struct dev *dev;
 	void *dev_handle;
 #endif
+
+	uint32_t routingtableid;
+	uint32_t maxbackofftimer;
 };
 
 #ifdef USE_SIGNALS

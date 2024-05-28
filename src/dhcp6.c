@@ -1407,6 +1407,9 @@ sent:
 		state->RT = RT * 2;
 		if (state->RT < RT) /* Check overflow */
 			state->RT = RT;
+		if (state->RT > ctx->maxbackofftimer) {
+			state->RT = ctx->maxbackofftimer;
+		}
 		if (state->MRC == 0 || state->RTC < state->MRC)
 			eloop_timeout_add_msec(ctx->eloop,
 			    RT, callback, ifp);
@@ -4103,7 +4106,7 @@ dhcp6_freedrop(struct interface *ifp, int drop, const char *reason)
 			    state->state != DH6S_INFORMED)
 			{
 				dhcp6_startrelease(ifp);
-				return;
+				goto release_addr;
 			}
 			dhcp_unlink(ifp->ctx, state->leasefile);
 		}
@@ -4120,24 +4123,29 @@ dhcp6_freedrop(struct interface *ifp, int drop, const char *reason)
 		}
 #endif
 
+release_addr:
 		dhcp6_freedrop_addrs(ifp, drop, NULL);
 		free(state->old);
 		state->old = state->new;
 		state->old_len = state->new_len;
 		state->new = NULL;
 		state->new_len = 0;
+		int run_script = 0;
 		if (drop && state->old &&
 		    (options & DHCPCD_NODROP) != DHCPCD_NODROP)
 		{
 			if (reason == NULL)
 				reason = "STOP6";
-			script_runreason(ifp, reason);
+			run_script = 1;
 		}
 		free(state->old);
 		free(state->send);
 		free(state->recv);
 		free(state);
 		ifp->if_data[IF_DATA_DHCP6] = NULL;
+		if (run_script == 1) {
+			script_runreason(ifp, reason);
+		}
 	}
 
 	/* If we don't have any more DHCP6 enabled interfaces,

@@ -49,6 +49,7 @@
 
 #define DEFAULT_TIMEOUT		30
 #define DEFAULT_REBOOT		5
+#define DEFAULT_MAX_BACKOFF_TIMER 120 // 2 minutes
 
 #ifndef HOSTNAME_MAX_LEN
 #define HOSTNAME_MAX_LEN	250	/* 255 - 3 (FQDN) - 2 (DNS enc) */
@@ -183,6 +184,8 @@
 #define O_CONFIGURE		O_BASE + 50
 #define O_NOCONFIGURE		O_BASE + 51
 #define O_RANDOMISE_HWADDR	O_BASE + 52
+#define O_ROUTING_TABLE_ID   O_BASE + 53
+#define O_MAX_BACKOFF_TIMER  O_BASE + 54
 
 extern const struct option cf_options[];
 

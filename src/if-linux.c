@@ -657,7 +657,7 @@ if_copyrt(struct dhcpcd_ctx *ctx, struct rt *rt, struct nlmsghdr *nlm)
 		return -1;
 	}
 	rtm = (struct rtmsg *)NLMSG_DATA(nlm);
-	if (rtm->rtm_table != RT_TABLE_MAIN)
+	if (rtm->rtm_table != ctx->routingtableid)
 		return -1;
 
 	memset(rt, 0, sizeof(*rt));
@@ -1560,9 +1560,19 @@ struct nlmr
 	char buffer[256];
 };
 
+static void set_routing_table_attr(struct nlmr nlm, uint32_t routing_table_id) {
+	if (routing_table_id < 256) {
+		nlm.rt.rtm_table = (uint8_t) routing_table_id;
+	} else {
+		nlm.rt.rtm_table = RT_TABLE_UNSPEC;
+		add_attr_32(&nlm.hdr, sizeof(nlm), RTA_TABLE, routing_table_id);
+	}
+}
+
 int
 if_route(unsigned char cmd, const struct rt *rt)
 {
+	struct dhcpcd_ctx *ctx = rt->rt_ifp->ctx;
 	struct nlmr nlm;
 	bool gateway_unspec;
 
@@ -1583,7 +1593,7 @@ if_route(unsigned char cmd, const struct rt *rt)
 	}
 	nlm.hdr.nlmsg_flags |= NLM_F_REQUEST;
 	nlm.rt.rtm_family = (unsigned char)rt->rt_dest.sa_family;
-	nlm.rt.rtm_table = RT_TABLE_MAIN;
+	set_routing_table_attr(nlm, ctx->routingtableid);
 
 	gateway_unspec = sa_is_unspecified(&rt->rt_gateway);
 
@@ -1711,9 +1721,9 @@ if_initrt(struct dhcpcd_ctx *ctx, rb_tree_t *kroutes, int af)
 	    .hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg)),
 	    .hdr.nlmsg_type = RTM_GETROUTE,
 	    .hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_MATCH,
-	    .rt.rtm_table = RT_TABLE_MAIN,
 	    .rt.rtm_family = (unsigned char)af,
 	};
+	set_routing_table_attr(nlm, ctx->routingtableid);
 
 	return if_sendnetlink(ctx, NETLINK_ROUTE, &nlm.hdr,
 	    &_if_initrt, kroutes);
