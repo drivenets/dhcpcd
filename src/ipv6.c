@@ -2320,7 +2320,7 @@ inet6_raroutes(rb_tree_t *routes, struct dhcpcd_ctx *ctx)
 	struct ra *rap;
 	const struct ipv6_addr *addr;
 
-	if (ctx->ra_routers == NULL)
+	if (ctx->ra_routers == NULL || ctx->ra_routers->tqh_first == NULL)
 		return 0;
 
 	TAILQ_FOREACH(rap, ctx->ra_routers, next) {
