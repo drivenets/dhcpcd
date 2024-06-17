@@ -222,7 +222,7 @@ script_buftoenv(struct dhcpcd_ctx *ctx, char *buf, size_t len)
 
 static long
 make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
-    const char *reason)
+    const char *reason, const char *sfrom)
 {
 	FILE *fp;
 	long buf_pos, i;
@@ -280,6 +280,8 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 		    path == NULL ? DEFAULT_PATH : path) == -1)
 			goto eexit;
 		if (efprintf(fp, "pid=%d", getpid()) == -1)
+			goto eexit;
+		if (sfrom != NULL && efprintf(fp, "dhcp_server_ip=%s", sfrom) == -1)
 			goto eexit;
 	}
 
@@ -584,7 +586,7 @@ send_interface1(struct fd_list *fd, const struct interface *ifp,
 	struct dhcpcd_ctx *ctx = ifp->ctx;
 	long len;
 
-	len = make_env(ifp->ctx, ifp, reason);
+	len = make_env(ifp->ctx, ifp, reason, NULL);
 	if (len == -1)
 		return -1;
 	return control_queue(fd, ctx->script_buf, (size_t)len);
@@ -742,23 +744,12 @@ script_dump(const char *env, size_t len)
 }
 
 int
-script_runreason(const struct interface *ifp, const char *reason)
+_script_runreason(const struct interface *ifp, const char *reason, long buflen)
 {
 	struct dhcpcd_ctx *ctx = ifp->ctx;
 	char *argv[2];
 	int status = 0;
 	struct fd_list *fd;
-	long buflen;
-
-	if (ctx->script == NULL &&
-	    TAILQ_FIRST(&ifp->ctx->control_fds) == NULL)
-		return 0;
-
-	/* Make our env */
-	if ((buflen = make_env(ifp->ctx, ifp, reason)) == -1) {
-		logerr(__func__);
-		return -1;
-	}
 
 	if (strncmp(reason, "DUMP", 4) == 0)
 		return script_dump(ctx->script_buf, (size_t)buflen);
@@ -798,4 +789,42 @@ send_listeners:
 	}
 
 	return status;
+}
+
+
+int
+script_runreason6(const struct interface *ifp, const char *reason, const char *sfrom)
+{
+	struct dhcpcd_ctx *ctx = ifp->ctx;
+	long buflen;
+
+	if (ctx->script == NULL &&
+	    TAILQ_FIRST(&ifp->ctx->control_fds) == NULL)
+		return 0;
+
+	/* Make our env */
+	if ((buflen = make_env(ifp->ctx, ifp, reason, sfrom)) == -1) {
+		logerr(__func__);
+		return -1;
+	}
+    return _script_runreason(ifp, reason, buflen);
+
+}
+
+int
+script_runreason(const struct interface *ifp, const char *reason)
+{
+	struct dhcpcd_ctx *ctx = ifp->ctx;
+	long buflen;
+
+	if (ctx->script == NULL &&
+	    TAILQ_FIRST(&ifp->ctx->control_fds) == NULL)
+		return 0;
+
+	/* Make our env */
+	if ((buflen = make_env(ifp->ctx, ifp, reason, NULL)) == -1) {
+		logerr(__func__);
+		return -1;
+	}
+    return _script_runreason(ifp, reason, buflen);
 }

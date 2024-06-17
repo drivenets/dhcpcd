@@ -1,0 +1,18 @@
+CompileFlags:
+  Add:
+    - "-I.."
+    - "-I../src"
+    - "-I./crypt"
+    - "-D HAVE_CONFIG_H"
+    - "-D _GNU_SOURCE"
+    - "-D _FILE_OFFSET_BITS=64"
+    - "-D _LARGEFILE_SOURCE"
+    - "-D _LARGEFILE64_SOURCE"
+    - "-D INET"
+    - "-D ARP"
+    - "-D ARPING"
+    - "-D IPV4LL"
+    - "-D INET6"
+    - "-D DHCP6"
+    - "-D AUTH"
+    - "-D PRIVSEP"

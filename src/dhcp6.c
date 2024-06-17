@@ -2850,7 +2850,7 @@ dhcp6_ifdelegateaddr(struct interface *ifp, struct ipv6_addr *prefix,
 #endif
 
 static void
-dhcp6_script_try_run(struct interface *ifp, int delegated)
+dhcp6_script_try_run(struct interface *ifp, int delegated, const char *sfrom)
 {
 	struct dhcp6_state *state;
 	struct ipv6_addr *ap;
@@ -2880,7 +2880,7 @@ dhcp6_script_try_run(struct interface *ifp, int delegated)
 		}
 	}
 	if (completed) {
-		script_runreason(ifp, delegated ? "DELEGATED6" : state->reason);
+		script_runreason6(ifp, delegated ? "DELEGATED6" : state->reason, sfrom);
 		if (!delegated)
 			dhcpcd_daemonise(ifp->ctx);
 	} else
@@ -2987,7 +2987,7 @@ dhcp6_delegate_prefix(struct interface *ifp)
 			struct dhcp6_state *s = D6_STATE(ifd);
 
 			ipv6_addaddrs(&s->addrs);
-			dhcp6_script_try_run(ifd, 1);
+			dhcp6_script_try_run(ifd, 1, NULL);
 		}
 	}
 
@@ -3061,7 +3061,7 @@ dhcp6_find_delegates(struct interface *ifp)
 		state->state = DH6S_DELEGATED;
 		ipv6_addaddrs(&state->addrs);
 		rt_build(ifp->ctx, AF_INET6);
-		dhcp6_script_try_run(ifp, 1);
+		dhcp6_script_try_run(ifp, 1, NULL);
 	}
 	return k;
 }
@@ -3283,7 +3283,7 @@ dhcp6_bind(struct interface *ifp, const char *op, const char *sfrom)
 #ifndef SMALL
 		dhcp6_delegate_prefix(ifp);
 #endif
-		dhcp6_script_try_run(ifp, 0);
+		dhcp6_script_try_run(ifp, 0, sfrom);
 	}
 
 	if (ifp->ctx->options & DHCPCD_TEST ||
