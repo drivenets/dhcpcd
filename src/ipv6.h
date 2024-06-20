@@ -200,6 +200,7 @@ struct ipv6_addr {
 #endif
 
 	void (*dadcallback)(void *);
+    const char *sfrom;
 	int dadcounter;
 
 	struct nd_neighbor_advert *na;
