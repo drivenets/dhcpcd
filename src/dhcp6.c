@@ -1584,11 +1584,11 @@ dhcp6_dadcallback(void *arg)
 		return;
 	}
 
-	script_runreason(ifp,
+	script_runreason6(ifp,
 #ifndef SMALL
 	    ia->delegating_prefix ? "DELEGATED6" :
 #endif
-	    state->reason);
+	    state->reason, ia->sfrom);
 	if (valid)
 		dhcpcd_daemonise(ifp->ctx);
 }
@@ -2149,7 +2149,7 @@ dhcp6_findaddr(struct dhcpcd_ctx *ctx, const struct in6_addr *addr,
 
 static int
 dhcp6_findna(struct interface *ifp, uint16_t ot, const uint8_t *iaid,
-    uint8_t *d, size_t l, const struct timespec *acquired)
+    uint8_t *d, size_t l, const struct timespec *acquired, const char *sfrom)
 {
 	struct dhcp6_state *state;
 	uint8_t *o, *nd;
@@ -2195,6 +2195,7 @@ dhcp6_findna(struct interface *ifp, uint16_t ot, const uint8_t *iaid,
 			 */
 			a = ipv6_newaddr(ifp, &ia.addr, 128, IPV6_AF_ONLINK);
 			a->dadcallback = dhcp6_dadcallback;
+            a->sfrom = sfrom;
 			a->ia_type = ot;
 			memcpy(a->iaid, iaid, sizeof(a->iaid));
 			a->created = *acquired;
@@ -2458,7 +2459,7 @@ dhcp6_findia(struct interface *ifp, struct dhcp6_message *m, size_t l,
 #endif
 		} else {
 			if (dhcp6_findna(ifp, o.code, ia.iaid, p, o.len,
-					 acquired) == 0)
+					 acquired, sfrom) == 0)
 			{
 				logwarnx("%s: %s: DHCPv6 REPLY missing "
 				    "IA Address",
@@ -2769,7 +2770,7 @@ dhcp6_startinit(struct interface *ifp)
 #ifndef SMALL
 static struct ipv6_addr *
 dhcp6_ifdelegateaddr(struct interface *ifp, struct ipv6_addr *prefix,
-    const struct if_sla *sla, struct if_ia *if_ia)
+    const struct if_sla *sla, struct if_ia *if_ia, const char *sfrom)
 {
 	struct dhcp6_state *state;
 	struct in6_addr addr, daddr;
@@ -2825,6 +2826,7 @@ dhcp6_ifdelegateaddr(struct interface *ifp, struct ipv6_addr *prefix,
 		if (ia == NULL)
 			return NULL;
 		ia->dadcallback = dhcp6_dadcallback;
+        ia->sfrom = sfrom;
 		memcpy(&ia->iaid, &prefix->iaid, sizeof(ia->iaid));
 		ia->created = prefix->acquired;
 
@@ -2896,7 +2898,7 @@ dhcp6_find_delegates(__unused struct interface *ifp)
 }
 #else
 static void
-dhcp6_delegate_prefix(struct interface *ifp)
+dhcp6_delegate_prefix(struct interface *ifp, const char *sfrom)
 {
 	struct if_options *ifo;
 	struct dhcp6_state *state;
@@ -2958,7 +2960,7 @@ dhcp6_delegate_prefix(struct interface *ifp)
 						break;
 					}
 					if (dhcp6_ifdelegateaddr(ifd, ap,
-					    NULL, ia))
+					    NULL, ia, sfrom))
 						k++;
 				}
 				for (j = 0; j < ia->sla_len; j++) {
@@ -2974,7 +2976,7 @@ dhcp6_delegate_prefix(struct interface *ifp)
 						break;
 					}
 					if (dhcp6_ifdelegateaddr(ifd, ap,
-					    sla, ia))
+					    sla, ia, sfrom))
 						k++;
 				}
 				if (carrier_warned)
@@ -3048,7 +3050,7 @@ dhcp6_find_delegates(struct interface *ifp)
 						return 1;
 					}
 					if (dhcp6_ifdelegateaddr(ifp, ap,
-					    sla, ia))
+					    sla, ia, NULL))
 					    k++;
 				}
 			}
@@ -3281,7 +3283,7 @@ dhcp6_bind(struct interface *ifp, const char *op, const char *sfrom)
 				logerr("dhcp_writefile: %s",state->leasefile);
 		}
 #ifndef SMALL
-		dhcp6_delegate_prefix(ifp);
+		dhcp6_delegate_prefix(ifp, sfrom);
 #endif
 		dhcp6_script_try_run(ifp, 0, sfrom);
 	}
