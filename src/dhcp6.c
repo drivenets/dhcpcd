@@ -2195,7 +2195,8 @@ dhcp6_findna(struct interface *ifp, uint16_t ot, const uint8_t *iaid,
 			 */
 			a = ipv6_newaddr(ifp, &ia.addr, 128, IPV6_AF_ONLINK);
 			a->dadcallback = dhcp6_dadcallback;
-            a->sfrom = sfrom;
+            strncpy(a->sfrom, sfrom, INET6_ADDRSTRLEN);
+            a->sfrom[INET6_ADDRSTRLEN - 1] = '\0';
 			a->ia_type = ot;
 			memcpy(a->iaid, iaid, sizeof(a->iaid));
 			a->created = *acquired;
@@ -2826,7 +2827,8 @@ dhcp6_ifdelegateaddr(struct interface *ifp, struct ipv6_addr *prefix,
 		if (ia == NULL)
 			return NULL;
 		ia->dadcallback = dhcp6_dadcallback;
-        ia->sfrom = sfrom;
+        strncpy(ia->sfrom, sfrom, INET6_ADDRSTRLEN);
+        ia->sfrom[INET6_ADDRSTRLEN - 1] = '\0';
 		memcpy(&ia->iaid, &prefix->iaid, sizeof(ia->iaid));
 		ia->created = prefix->acquired;
 
