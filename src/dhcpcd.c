@@ -2611,7 +2611,7 @@ start_manager:
 	}
 
 run_loop:
-	i = eloop_start(ctx.eloop, &ctx.sigset);
+	i = eloop_start(ctx.eloop, &ctx.sigset, 0);
 	if (i < 0) {
 		logerr("%s: eloop_start", __func__);
 		goto exit_failure;

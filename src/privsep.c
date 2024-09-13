@@ -762,7 +762,7 @@ ps_stopwait(struct dhcpcd_ctx *ctx)
 	}
 #endif
 
-	error = eloop_start(ctx->ps_eloop, &ctx->sigset);
+	error = eloop_start(ctx->ps_eloop, &ctx->sigset, 1);
 	if (error != EXIT_SUCCESS)
 		logerr("%s: eloop_start", __func__);
 

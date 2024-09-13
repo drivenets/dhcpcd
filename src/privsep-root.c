@@ -122,7 +122,7 @@ ps_root_readerror(struct dhcpcd_ctx *ctx, void *data, size_t len)
 		return -1;
 
 	eloop_enter(ctx->ps_eloop);
-	eloop_start(ctx->ps_eloop, &ctx->sigset);
+	eloop_start(ctx->ps_eloop, &ctx->sigset, 1);
 	eloop_event_delete(ctx->ps_eloop, fd);
 
 	errno = psr_ctx.psr_error.psr_errno;
@@ -187,7 +187,7 @@ ps_root_mreaderror(struct dhcpcd_ctx *ctx, void **data, size_t *len)
 		return -1;
 
 	eloop_enter(ctx->ps_eloop);
-	eloop_start(ctx->ps_eloop, &ctx->sigset);
+	eloop_start(ctx->ps_eloop, &ctx->sigset, 1);
 	eloop_event_delete(ctx->ps_eloop, fd);
 
 	errno = psr_ctx.psr_error.psr_errno;
