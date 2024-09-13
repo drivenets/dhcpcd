@@ -1164,7 +1164,7 @@ eloop_run_pselect(struct eloop *eloop,
 #endif
 
 int
-eloop_start(struct eloop *eloop, sigset_t *signals)
+eloop_start(struct eloop *eloop, sigset_t *signals, int inner_loop)
 {
 	int error;
 	struct eloop_timeout *t;
@@ -1181,11 +1181,26 @@ eloop_start(struct eloop *eloop, sigset_t *signals)
 
 #ifndef HAVE_KQUEUE
 		if (_eloop_nsig != 0) {
-			int n = _eloop_sig[--_eloop_nsig];
+			if (inner_loop == 1)
+			{
+				for (int i = 0; i < _eloop_nsig; i++)
+					if (_eloop_sig[i] == SIGCHLD)
+					{
+						if (eloop->signal_cb != NULL)
+							eloop->signal_cb(SIGCHLD, eloop->signal_cb_ctx);
+						memmove(&_eloop_sig[i], &_eloop_sig[i + 1], (_eloop_nsig - i) * sizeof(_eloop_sig[0]));
+						--_eloop_nsig;
+						continue;
+					}
+			}
+			else
+			{
+				int n = _eloop_sig[--_eloop_nsig];
 
-			if (eloop->signal_cb != NULL)
-				eloop->signal_cb(n, eloop->signal_cb_ctx);
-			continue;
+				if (eloop->signal_cb != NULL)
+					eloop->signal_cb(n, eloop->signal_cb_ctx);
+				continue;
+			}
 		}
 #endif
 

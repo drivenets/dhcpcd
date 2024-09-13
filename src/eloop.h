@@ -92,6 +92,6 @@ void eloop_exit(struct eloop *, int);
 void eloop_enter(struct eloop *);
 int eloop_forked(struct eloop *);
 int eloop_open(struct eloop *);
-int eloop_start(struct eloop *, sigset_t *);
+int eloop_start(struct eloop *, sigset_t *, int);
 
 #endif
