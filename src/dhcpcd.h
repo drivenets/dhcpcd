@@ -251,6 +251,7 @@ struct dhcpcd_ctx {
 
 	uint32_t routingtableid;
 	uint32_t maxbackofftimer;
+	uint8_t dhcpv4_cos;
 };
 
 #ifdef USE_SIGNALS

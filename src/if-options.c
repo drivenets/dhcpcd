@@ -171,6 +171,7 @@ const struct option cf_options[] = {
 	{"noconfigure",     no_argument,       NULL, O_NOCONFIGURE},
 	{"routingtableid",  required_argument, NULL, O_ROUTING_TABLE_ID},
 	{"maxbackofftimer", required_argument, NULL, O_MAX_BACKOFF_TIMER},
+	{"dhcpv4cos",       required_argument, NULL, O_DHCPV4_COS},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -2364,6 +2365,18 @@ invalid_token:
 		}
 		ctx->maxbackofftimer = (uint32_t)u * MSEC_PER_SEC;
 		break;
+	case O_DHCPV4_COS:
+		ARG_REQUIRED;
+		fp = strwhite(arg);
+		if (fp)
+			*fp++ = '\0';
+		u = (uint32_t)strtou(arg, NULL, 0, 0, 56, &e);
+		if (e) {
+			logerrx("invalid dhcpv4cos value: %s", arg);
+			return -1;
+		}
+		ctx->dhcpv4_cos = (uint8_t)u;
+		break;
 	default:
 		return 0;
 	}
@@ -2464,6 +2477,7 @@ default_config(struct dhcpcd_ctx *ctx)
 
 	ctx->routingtableid = RT_TABLE_MAIN;
 	ctx->maxbackofftimer = DEFAULT_MAX_BACKOFF_TIMER * MSEC_PER_SEC;
+	ctx->dhcpv4_cos = DEFAULT_DHCPV4_COS;
 
 	return ifo;
 }
