@@ -50,6 +50,7 @@
 #define DEFAULT_TIMEOUT		30
 #define DEFAULT_REBOOT		5
 #define DEFAULT_MAX_BACKOFF_TIMER 120 // 2 minutes
+#define DEFAULT_DHCPV4_COS	48	/* Default DSCP value 48 (becomes ToS 192 when shifted << 2) */
 
 #ifndef HOSTNAME_MAX_LEN
 #define HOSTNAME_MAX_LEN	250	/* 255 - 3 (FQDN) - 2 (DNS enc) */
@@ -186,6 +187,7 @@
 #define O_RANDOMISE_HWADDR	O_BASE + 52
 #define O_ROUTING_TABLE_ID   O_BASE + 53
 #define O_MAX_BACKOFF_TIMER  O_BASE + 54
+#define O_DHCPV4_COS         O_BASE + 55
 
 extern const struct option cf_options[];
 
