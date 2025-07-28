@@ -1621,7 +1621,7 @@ in_cksum(const void *data, size_t len, uint32_t *isum)
 
 static struct bootp_pkt *
 dhcp_makeudppacket(size_t *sz, const uint8_t *data, size_t length,
-	struct in_addr source, struct in_addr dest, struct dhcpcd_ctx *ctx)
+	struct in_addr source, struct in_addr dest)
 {
 	struct bootp_pkt *udpp;
 	struct ip *ip;
@@ -1664,9 +1664,6 @@ dhcp_makeudppacket(size_t *sz, const uint8_t *data, size_t length,
 	ip->ip_sum = in_cksum(ip, sizeof(*ip), NULL);
 	if (ip->ip_sum == 0)
 		ip->ip_sum = 0xffff; /* RFC 768 */
-
-	/* RFC 2474: DSCP occupies upper 6 bits of ToS field */
-	ip->ip_tos = ctx->dhcpv4_cos << 2;
 
 	*sz = sizeof(*ip) + sizeof(*udp) + length;
 	return udpp;
@@ -1789,7 +1786,7 @@ send_message(struct interface *ifp, uint8_t type,
 	if (dhcp_openbpf(ifp) == -1)
 		goto out;
 
-	udp = dhcp_makeudppacket(&ulen, (uint8_t *)bootp, len, from, to, ifp->ctx);
+	udp = dhcp_makeudppacket(&ulen, (uint8_t *)bootp, len, from, to);
 	if (udp == NULL) {
 		logerr("%s: dhcp_makeudppacket", ifp->name);
 		r = 0;
