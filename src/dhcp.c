@@ -1661,12 +1661,14 @@ dhcp_makeudppacket(size_t *sz, const uint8_t *data, size_t length,
 	ip->ip_id = (uint16_t)arc4random_uniform(UINT16_MAX);
 	ip->ip_ttl = IPDEFTTL;
 	ip->ip_len = htons((uint16_t)(sizeof(*ip) + sizeof(*udp) + length));
+
+	/* RFC 2474: DSCP occupies upper 6 bits of ToS field */
+	ip->ip_tos = (ip->ip_tos & 0x03) | (ctx->dhcpv4_cos << 2);
+	fprintf(stderr, "Setting ip_tos to 0x%02x (DSCP: 0x%02x)\n", ip->ip_tos, ctx->dhcpv4_cos);
+
 	ip->ip_sum = in_cksum(ip, sizeof(*ip), NULL);
 	if (ip->ip_sum == 0)
 		ip->ip_sum = 0xffff; /* RFC 768 */
-
-	/* RFC 2474: DSCP occupies upper 6 bits of ToS field */
-	ip->ip_tos = ctx->dhcpv4_cos << 2;
 
 	*sz = sizeof(*ip) + sizeof(*udp) + length;
 	return udpp;
