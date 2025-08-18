@@ -66,6 +66,12 @@ struct psr_error
 	size_t psr_datalen;
 };
 
+/* Max per-message payload for chunked replies on the error channel.
+ * Keep each datagram ≤ one ps_msg receive buffer sized by ps_setbuf. */
+#ifndef PS_CHUNK_MAX_SIZE
+#define PS_CHUNK_MAX_SIZE (PS_BUFLEN - sizeof(struct psr_error))
+#endif
+
 struct psr_ctx {
 	struct dhcpcd_ctx *psr_ctx;
 	struct psr_error psr_error;
@@ -231,6 +237,47 @@ ps_root_writeerror(struct dhcpcd_ctx *ctx, ssize_t result,
 	}
 
 	return err;
+}
+
+/* Send large getifaddrs payload in chunks to fit privsep IPC limits. */
+static ssize_t
+ps_root_send_getifaddrs_chunks(struct dhcpcd_ctx *ctx, const uint8_t *data,
+    size_t len)
+{
+	const size_t chunk_max = PS_CHUNK_MAX_SIZE;
+	size_t sent = 0;
+	ssize_t r = 0;
+	bool first = true;
+	int fd = PS_ROOT_FD(ctx);
+	int fl = -1;
+
+	/* Temporarily make the PS root FD blocking to avoid EAGAIN while
+	 * streaming many large datagrams back-to-back. */
+	if (fd != -1) {
+		fl = fcntl(fd, F_GETFL, 0);
+		if (fl != -1)
+			(void)fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
+	}
+
+	while (sent < len) {
+		size_t clen = len - sent;
+		if (clen > chunk_max)
+			clen = chunk_max;
+		/* Ensure error field is clean for success reply. */
+		errno = 0;
+		do {
+			r = ps_root_writeerror(ctx, first ? (ssize_t)len : 0,
+			    (void *)(data + sent), clen);
+		} while (r == -1 && errno == EINTR);
+		if (r == -1)
+			break;
+		sent += clen;
+		first = false;
+	}
+
+	if (fd != -1 && fl != -1)
+		(void)fcntl(fd, F_SETFL, fl);
+	return r;
 }
 
 static ssize_t
@@ -609,6 +656,15 @@ ps_root_recvmsgcb(void *arg, struct ps_msghdr *psm, struct msghdr *msg)
 	case PS_GETIFADDRS:
 		err = ps_root_dogetifaddrs(&rdata, &rlen);
 		free_rdata = true;
+		/* If the payload is too large for a single message, chunk it. */
+		if (err == 0 && rlen > PS_CHUNK_MAX_SIZE) {
+			ssize_t wr;
+			wr = ps_root_send_getifaddrs_chunks(ctx, rdata, rlen);
+			/* We have already sent the reply in chunks. */
+			if (free_rdata)
+				free(rdata);
+			return wr;
+		}
 		break;
 #endif
 #if defined(INET6) && (defined(__linux__) || defined(HAVE_PLEDGE))
@@ -1087,14 +1143,58 @@ ps_root_getifaddrs(struct dhcpcd_ctx *ctx, struct ifaddrs **ifahead)
 	socklen_t salen;
 	size_t len;
 	ssize_t err;
+	/* Chunk reassembly support */
+	void *big = NULL;
+	size_t total = 0, used = 0;
 
 	if (ps_sendcmd(ctx, PS_ROOT_FD(ctx),
 	    PS_GETIFADDRS, 0, NULL, 0) == -1)
 		return -1;
 	err = ps_root_mreaderror(ctx, &buf, &len);
-
 	if (err == -1)
 		return -1;
+	/* If the result value is larger than the first chunk length, we are in
+	 * chunked mode: err carries the total size, len is the first chunk size. */
+	if (err > (ssize_t)len) {
+		logdebugx("getifaddrs: chunked mode, total=%zu, first=%zu", (size_t)err, len);
+		total = (size_t)err;
+		big = malloc(total);
+		if (big == NULL) {
+			logerrx("getifaddrs: malloc failed (%zu bytes)", total);
+			free(buf);
+			return -1;
+		}
+		memcpy(big, buf, len);
+		used = len;
+		free(buf);
+		buf = NULL;
+		/* Read remaining chunks */
+		while (used < total) {
+			void *part = NULL;
+			size_t plen = 0;
+			ssize_t r = ps_root_mreaderror(ctx, &part, &plen);
+			logdebugx("getifaddrs: chunk size=%zu, used=%zu/%zu", plen, used, total);
+			if (r == -1) {
+				logerrx("getifaddrs: chunk read failed");
+				free(part);
+				free(big);
+				return -1;
+			}
+			if (plen == 0) {
+				free(part);
+				break;
+			}
+			if (used + plen > total) {
+				plen = total - used;
+			}
+			memcpy((char *)big + used, part, plen);
+			used += plen;
+			free(part);
+		}
+		logdebugx("getifaddrs: all chunks received, total=%zu", total);
+		buf = big;
+		len = total;
+	}
 
 	/* Should be impossible - lo0 will always exist. */
 	if (len == 0) {
