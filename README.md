@@ -89,6 +89,51 @@ in /etc.
 dhcpcd-9 defaults the run directory to `/var/run/dhcpcd` instead of
 `/var/run` and the prefix of dhcpcd has been removed from the files therein.
 
+## Building a Static .deb Package (Drivenets)
+
+To create a statically-linked .deb package for Drivenets (baseos, interfacehandler, containers):
+
+1. **Configure and build:**
+   ```bash
+   ./configure --libexecdir="/usr/lib/dhcpcd" --enable-static CFLAGS="-Os -g"
+   make
+   ```
+
+2. **Install to package directory:**
+   ```bash
+   make install DESTDIR=/path/to/dhcpcd_<VERSION>-dn_amd64
+   ```
+   Replace `<VERSION>` with the actual version (e.g., `10.0.6`).
+
+3. **Add Debian control files:**
+
+   Create a `DEBIAN/` directory inside the package folder with:
+   - `control` (required) – package metadata
+   - `prerm` (optional) – pre-removal script
+   - `postrm` (optional) – post-removal script
+
+4. **Build the .deb:**
+   ```bash
+   dpkg-deb --build /path/to/dhcpcd_<VERSION>-dn_amd64
+   ```
+
+5. **Upload to Minio:**
+
+   Upload the `.deb` file to:
+   ```
+   http://minioio.dev.drivenets.net:9000/minio/infra-cmc/deb-packages/
+   ```
+
+6. **Update package URLs in dependent repos:**
+
+   Update the download URL in the following files:
+   - `interface-handler`: `Dockerfile.cheetah-tests`
+   - `cheetah`: `image/onie/docker/scripts/deimage.sh`
+   - `cheetah`: `containers/ubuntu/Makefile`
+
+The resulting `.deb` contains a fully static `dhcpcd` binary with no external dependencies.
+
+
 ## ChangeLog
 We no longer supply a ChangeLog.
 However, you're more than welcome to read the
