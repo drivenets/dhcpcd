@@ -165,6 +165,7 @@ const struct option cf_options[] = {
 	{"noup",            no_argument,       NULL, O_NOUP},
 	{"lastleaseextend", no_argument,       NULL, O_LASTLEASE_EXTEND},
 	{"inactive",        no_argument,       NULL, O_INACTIVE},
+	{"ipv6ll-external", no_argument,       NULL, O_IPV6LL_EXTERNAL},
 	{"mudurl",          required_argument, NULL, O_MUDURL},
 	{"link_rcvbuf",     required_argument, NULL, O_LINK_RCVBUF},
 	{"configure",       no_argument,       NULL, O_CONFIGURE},
@@ -2316,6 +2317,9 @@ invalid_token:
 	case O_INACTIVE:
 		ifo->options |= DHCPCD_INACTIVE;
 		break;
+	case O_IPV6LL_EXTERNAL:
+		ifo->ipv6ll_external = true;
+		break;
 	case O_MUDURL:
 		ARG_REQUIRED;
 		s = parse_string((char *)ifo->mudurl + 1, MUDURL_MAX_LEN, arg);
@@ -2397,6 +2401,12 @@ parse_config_line(struct dhcpcd_ctx *ctx, const char *ifname,
     struct dhcp_opt **ldop, struct dhcp_opt **edop)
 {
 	unsigned int i;
+
+	if (strcmp(opt, "ipv6ll-external") == 0) {
+		logerrx("option can only be used on the command line -- %s",
+		    opt);
+		return -1;
+	}
 
 	for (i = 0; i < sizeof(cf_options) / sizeof(cf_options[0]); i++) {
 		if (!cf_options[i].name ||

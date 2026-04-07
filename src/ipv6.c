@@ -1558,6 +1558,8 @@ ipv6_tryaddlinklocal(struct interface *ifp)
 #endif
 		return 0;
 	}
+	if (ifp->options->ipv6ll_external)
+		return 0;
 	if (!CAN_ADD_LLADDR(ifp))
 		return 0;
 

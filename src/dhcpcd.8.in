@@ -51,6 +51,7 @@
 .Op Fl S , Fl Fl static Ar value
 .Op Fl s , Fl Fl inform Ar address Ns Op Ar /cidr Ns Op Ar /broadcast_address
 .Op Fl Fl inform6
+.Op Fl Fl ipv6ll-external
 .Op Fl t , Fl Fl timeout Ar seconds
 .Op Fl u , Fl Fl userclass Ar class
 .Op Fl v , Fl Fl vendor Ar code , Ar value
@@ -631,6 +632,11 @@ option to specify which protocol(s) to configure before exiting.
 Configure IPv4 only.
 .It Fl 6 , Fl Fl ipv6only
 Configure IPv6 only.
+.It Fl Fl ipv6ll-external
+Don't create an IPv6 link-local address.
+.Nm
+waits for a usable link-local address to be created by another entity before
+continuing IPv6 operations that require it.
 .It Fl A , Fl Fl noarp
 Don't request or claim the address by ARP.
 This also disables IPv4LL.
