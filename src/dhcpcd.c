@@ -1178,42 +1178,17 @@ dhcpcd_runprestartinterface(void *arg)
 	dhcpcd_prestartinterface(ifp);
 }
 
-void
-dhcpcd_linkoverflow(struct dhcpcd_ctx *ctx)
+static void
+dhcpcd_linkoverflow_recover(void *arg)
 {
-	socklen_t socklen;
-	int rcvbuflen;
-	char buf[2048];
-	ssize_t rlen;
-	size_t rcnt;
+	struct dhcpcd_ctx *ctx = arg;
 	struct if_head *ifaces;
 	struct ifaddrs *ifaddrs;
 	struct interface *ifp, *ifn, *ifp1;
 
-	socklen = sizeof(rcvbuflen);
-	if (getsockopt(ctx->link_fd, SOL_SOCKET,
-	    SO_RCVBUF, &rcvbuflen, &socklen) == -1) {
-		logerr("%s: getsockopt", __func__);
-		rcvbuflen = 0;
-	}
-#ifdef __linux__
-	else
-		rcvbuflen /= 2;
-#endif
+	ctx->link_overflow_recovery = 0;
 
-	logerrx("route socket overflowed (rcvbuflen %d)"
-	    " - learning interface state", rcvbuflen);
-
-	/* Drain the socket.
-	 * We cannot open a new one due to privsep. */
-	rcnt = 0;
-	do {
-		rlen = read(ctx->link_fd, buf, sizeof(buf));
-		if (++rcnt % 1000 == 0)
-			logwarnx("drained %zu messages", rcnt);
-	} while (rlen != -1 || errno == ENOBUFS || errno == ENOMEM);
-	if (rcnt % 1000 != 0)
-		logwarnx("drained %zu messages", rcnt);
+	logerrx("learning interface state after route socket overflow");
 
 	/* Work out the current interfaces. */
 	ifaces = if_discover(ctx, &ifaddrs, ctx->ifc, ctx->ifv);
@@ -1255,6 +1230,50 @@ dhcpcd_linkoverflow(struct dhcpcd_ctx *ctx)
 	if_learnaddrs(ctx, ctx->ifaces, &ifaddrs);
 	if_deletestaleaddrs(ctx->ifaces);
 	if_freeifaddrs(ctx, &ifaddrs);
+}
+
+void
+dhcpcd_linkoverflow(struct dhcpcd_ctx *ctx)
+{
+	socklen_t socklen;
+	int rcvbuflen;
+	char buf[2048];
+	ssize_t rlen;
+	size_t rcnt;
+
+	socklen = sizeof(rcvbuflen);
+	if (getsockopt(ctx->link_fd, SOL_SOCKET,
+	    SO_RCVBUF, &rcvbuflen, &socklen) == -1) {
+		logerr("%s: getsockopt", __func__);
+		rcvbuflen = 0;
+	}
+#ifdef __linux__
+	else
+		rcvbuflen /= 2;
+#endif
+
+	logerrx("route socket overflowed (rcvbuflen %d)"
+	    " - scheduling interface state recovery", rcvbuflen);
+
+	/* Drain the socket immediately so the event loop can make progress. */
+	rcnt = 0;
+	do {
+		rlen = read(ctx->link_fd, buf, sizeof(buf));
+		if (++rcnt % 1000 == 0)
+			logwarnx("drained %zu messages", rcnt);
+	} while (rlen != -1 || errno == ENOBUFS || errno == ENOMEM);
+	if (rcnt % 1000 != 0)
+		logwarnx("drained %zu messages", rcnt);
+
+	if (ctx->link_overflow_recovery)
+		return;
+
+	ctx->link_overflow_recovery = 1;
+	if (eloop_timeout_add_sec(ctx->eloop, 30,
+	    dhcpcd_linkoverflow_recover, ctx) == -1) {
+		ctx->link_overflow_recovery = 0;
+		dhcpcd_linkoverflow_recover(ctx);
+	}
 }
 
 void
