@@ -155,6 +155,7 @@ struct dhcpcd_ctx {
 #ifndef SMALL
 	int link_rcvbuf;
 #endif
+	unsigned int link_overflow_recovery;
 	int seq;	/* route message sequence no */
 	int sseq;	/* successful seq no sent */
 
