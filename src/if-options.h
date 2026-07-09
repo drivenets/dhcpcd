@@ -188,6 +188,7 @@
 #define O_ROUTING_TABLE_ID   O_BASE + 53
 #define O_MAX_BACKOFF_TIMER  O_BASE + 54
 #define O_DHCPV4_COS         O_BASE + 55
+#define O_IPV6LL_EXTERNAL    O_BASE + 56
 
 extern const struct option cf_options[];
 
@@ -240,6 +241,7 @@ struct if_options {
 	uint32_t timeout;
 	uint32_t reboot;
 	unsigned long long options;
+	bool ipv6ll_external;
 	bool randomise_hwaddr;
 
 	struct in_addr req_addr;
