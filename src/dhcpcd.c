@@ -1144,9 +1144,17 @@ dhcpcd_checkcarrier(void *arg)
 
 	ifp = if_find(ifp0->ctx->ifaces, ifp0->name);
 	if (ifp == NULL || ifp->carrier == ifp0->carrier)
-		return;
+		goto out;
 
 	dhcpcd_handlecarrier(ifp, ifp0->carrier, ifp0->flags);
+out:
+	/*
+	 * SW-281365: ifp0 is a throw-away interface discovered during route
+	 * socket overflow recovery and is owned by us (the caller removed it
+	 * from the discovered list expecting us to free it). It must be freed
+	 * on every path, otherwise each overflow leaks one struct interface
+	 * per already-known interface, growing dhcpcd RSS without bound.
+	 */
 	if_free(ifp0);
 }
 
