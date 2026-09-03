@@ -3086,6 +3086,7 @@ dhcp6_bind(struct interface *ifp, const char *op, const char *sfrom)
 {
 	struct dhcp6_state *state = D6_STATE(ifp);
 	bool timedout = (op == NULL), confirmed;
+	bool renew_due = false, rebind_due = false, expire_due = false;
 	struct ipv6_addr *ia;
 	int loglevel;
 	struct timespec now;
@@ -3221,23 +3222,31 @@ dhcp6_bind(struct interface *ifp, const char *op, const char *sfrom)
 
 		elapsed = (uint32_t)eloop_timespec_diff(&now,
 		    &state->acquired, NULL);
+		/* Zero also represents an unset timer. Remember overdue Confirm
+		 * timers before clamping them so the due transition still runs. */
 		if (state->renew && state->renew != ND6_INFINITE_LIFETIME) {
 			if (state->renew > elapsed)
 				state->renew -= elapsed;
-			else
+			else {
+				renew_due = state->state == DH6S_CONFIRM && !timedout;
 				state->renew = 0;
+			}
 		}
 		if (state->rebind && state->rebind != ND6_INFINITE_LIFETIME) {
 			if (state->rebind > elapsed)
 				state->rebind -= elapsed;
-			else
+			else {
+				rebind_due = state->state == DH6S_CONFIRM && !timedout;
 				state->rebind = 0;
+			}
 		}
 		if (state->expire && state->expire != ND6_INFINITE_LIFETIME) {
 			if (state->expire > elapsed)
 				state->expire -= elapsed;
-			else
+			else {
+				expire_due = state->state == DH6S_CONFIRM && !timedout;
 				state->expire = 0;
+			}
 		}
 		confirmed = true;
 	}
@@ -3251,15 +3260,25 @@ dhcp6_bind(struct interface *ifp, const char *op, const char *sfrom)
 			state->state = DH6S_BOUND;
 		state->failed = false;
 
-		if (state->renew && state->renew != ND6_INFINITE_LIFETIME)
+		if (expire_due)
+			eloop_timeout_add_sec(ifp->ctx->eloop,
+			    0, dhcp6_startexpire, ifp);
+		else if (rebind_due)
+			eloop_timeout_add_sec(ifp->ctx->eloop,
+			    0, dhcp6_startrebind, ifp);
+		else if (renew_due)
+			eloop_timeout_add_sec(ifp->ctx->eloop,
+			    0, dhcp6_startrenew, ifp);
+		else if (state->renew && state->renew != ND6_INFINITE_LIFETIME)
 			eloop_timeout_add_sec(ifp->ctx->eloop,
 			    state->renew,
 			    state->state == DH6S_INFORMED ?
 			    dhcp6_startinform : dhcp6_startrenew, ifp);
-		if (state->rebind && state->rebind != ND6_INFINITE_LIFETIME)
+		if (!expire_due && !rebind_due &&
+		    state->rebind && state->rebind != ND6_INFINITE_LIFETIME)
 			eloop_timeout_add_sec(ifp->ctx->eloop,
 			    state->rebind, dhcp6_startrebind, ifp);
-		if (state->expire != ND6_INFINITE_LIFETIME)
+		if (!expire_due && state->expire != ND6_INFINITE_LIFETIME)
 			eloop_timeout_add_sec(ifp->ctx->eloop,
 			    state->expire, dhcp6_startexpire, ifp);
 
