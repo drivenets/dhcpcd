@@ -93,17 +93,23 @@ dhcpcd-9 defaults the run directory to `/var/run/dhcpcd` instead of
 
 To create a statically-linked .deb package for Drivenets (baseos, interfacehandler, containers):
 
-1. **Configure and build:**
+1. **Configure and build from the repository root:**
    ```bash
-   ./configure --libexecdir="/usr/lib/dhcpcd" --enable-static CFLAGS="-Os -g"
+   ./configure --libexecdir="/usr/lib/dhcpcd" --enable-static --without-udev CFLAGS="-Os -g"
    make
    ```
 
-2. **Install to package directory:**
+2. **Install to package directory from the repository root:**
    ```bash
-   make install DESTDIR=/path/to/dhcpcd_<VERSION>-dn_amd64
+   VERSION=10.0.6-dn_81498e4e
+   PKGDIR="$PWD/src/dhcpcd_${VERSION}-dn_amd64"
+   make install DESTDIR="$PKGDIR"
    ```
-   Replace `<VERSION>` with the actual version (e.g., `10.0.6`).
+   Replace `VERSION` with the actual package version. `DESTDIR` should be an
+   absolute path: the top-level install enters both `src/` and `hooks/`, and a
+   relative `DESTDIR` would be interpreted separately from each subdirectory.
+   Running `make install` from `src/` skips `hooks/` entirely and omits
+   `/usr/lib/dhcpcd/dhcpcd-run-hooks`.
 
 3. **Add Debian control files:**
 
