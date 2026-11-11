@@ -410,6 +410,12 @@ By default
 .Nm
 does not request any lease time and leaves it in the hands of the
 DHCP server.
+.It Fl Fl listen-fd Ns = Ns Ar fd
+Use the already connected stream socket inherited as file descriptor
+.Ar fd
+as an event listener.  The descriptor must be greater than 2.  Events use
+the same framing as a control-socket listener and include events emitted
+during startup.  This option is only valid when starting a new dhcpcd process.
 .It Fl M , Fl Fl manager
 Start
 .Nm

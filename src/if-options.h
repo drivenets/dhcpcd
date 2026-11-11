@@ -189,6 +189,7 @@
 #define O_MAX_BACKOFF_TIMER  O_BASE + 54
 #define O_DHCPV4_COS         O_BASE + 55
 #define O_IPV6LL_EXTERNAL    O_BASE + 56
+#define O_LISTEN_FD          O_BASE + 57
 
 extern const struct option cf_options[];
 

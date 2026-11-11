@@ -296,6 +296,50 @@ control_new(struct dhcpcd_ctx *ctx, int fd, unsigned int flags)
 	return l;
 }
 
+int
+control_add_listener(struct dhcpcd_ctx *ctx, int fd)
+{
+	struct sockaddr_storage peer;
+	socklen_t len;
+	struct fd_list *l;
+	int flags, type;
+
+	len = sizeof(type);
+	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) == -1)
+		goto error;
+	if (type != SOCK_STREAM) {
+		errno = EPROTOTYPE;
+		goto error;
+	}
+	len = sizeof(peer);
+	if (getpeername(fd, (struct sockaddr *)&peer, &len) == -1)
+		goto error;
+	if ((flags = fcntl(fd, F_GETFD, 0)) == -1 ||
+	    fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == -1 ||
+	    (flags = fcntl(fd, F_GETFL, 0)) == -1 ||
+	    fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+		goto error;
+
+	/* Match the framing normally added before events cross privsep. */
+	l = control_new(ctx, fd, FD_LISTEN | FD_SENDLEN);
+	if (l == NULL)
+		goto error;
+	if (eloop_event_add(ctx->eloop, fd, ELE_READ,
+	    control_handle_data, l) == -1)
+	{
+		int saved_errno = errno;
+
+		control_free(l);
+		errno = saved_errno;
+		return -1;
+	}
+	return 0;
+
+error:
+	close(fd);
+	return -1;
+}
+
 static void
 control_handle1(struct dhcpcd_ctx *ctx, int lfd, unsigned int fd_flags,
     unsigned short events)

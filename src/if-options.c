@@ -173,6 +173,7 @@ const struct option cf_options[] = {
 	{"routingtableid",  required_argument, NULL, O_ROUTING_TABLE_ID},
 	{"maxbackofftimer", required_argument, NULL, O_MAX_BACKOFF_TIMER},
 	{"dhcpv4cos",       required_argument, NULL, O_DHCPV4_COS},
+	{"listen-fd",       required_argument, NULL, O_LISTEN_FD},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -693,6 +694,27 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 	case 'T': /* FALLTHROUGH */
 	case 'U': /* FALLTHROUGH */
 	case 'V': /* We need to handle non interface options */
+		break;
+	case O_LISTEN_FD:
+		ARG_REQUIRED;
+		if (ctx->options & DHCPCD_STARTED) {
+			errno = EINVAL;
+			logerrx("--listen-fd can only be used when starting dhcpcd");
+			return -1;
+		}
+		i = (int)strtoi(arg, NULL, 10, 3, INT_MAX, &e);
+		if (e) {
+			logerrx("invalid listener fd: %s", arg);
+			return -1;
+		}
+		if (ctx->control_listen_fd != -1 &&
+		    ctx->control_listen_fd != i)
+		{
+			errno = EINVAL;
+			logerrx("multiple --listen-fd values specified");
+			return -1;
+		}
+		ctx->control_listen_fd = i;
 		break;
 	case 'b':
 		ifo->options |= DHCPCD_BACKGROUND;
@@ -2416,6 +2438,11 @@ parse_config_line(struct dhcpcd_ctx *ctx, const char *ifname,
 	unsigned int i;
 
 	if (strcmp(opt, "ipv6ll-external") == 0) {
+		logerrx("option can only be used on the command line -- %s",
+		    opt);
+		return -1;
+	}
+	if (strcmp(opt, "listen-fd") == 0) {
 		logerrx("option can only be used on the command line -- %s",
 		    opt);
 		return -1;
