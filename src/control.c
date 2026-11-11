@@ -96,9 +96,16 @@ control_free(struct fd_list *fd)
 static void
 control_hangup(struct fd_list *fd)
 {
+	if (fd->flags & FD_OUTPUT_ONLY) {
+		if (TAILQ_FIRST(&fd->queue) != NULL)
+			logerrx("event listener fd %d disconnected with queued data",
+			    fd->fd);
+		else
+			logdebugx("event listener fd %d disconnected", fd->fd);
+	}
 
 #ifdef PRIVSEP
-	if (IN_PRIVSEP(fd->ctx)) {
+	if (IN_PRIVSEP(fd->ctx) && !(fd->flags & FD_OUTPUT_ONLY)) {
 		if (ps_ctl_sendeof(fd) == -1)
 			logerr(__func__);
 	}
@@ -148,32 +155,23 @@ control_handle_read(struct fd_list *fd)
 static int
 control_handle_write(struct fd_list *fd)
 {
-	struct iovec iov[2];
-	int iov_len;
 	struct fd_data *data;
+	int done;
 
 	data = TAILQ_FIRST(&fd->queue);
-
-	if (data->data_flags & FD_SENDLEN) {
-		iov[0].iov_base = &data->data_len;
-		iov[0].iov_len = sizeof(size_t);
-		iov[1].iov_base = data->data;
-		iov[1].iov_len = data->data_len;
-		iov_len = 2;
-	} else {
-		iov[0].iov_base = data->data;
-		iov[0].iov_len = data->data_len;
-		iov_len = 1;
-	}
-
-	if (writev(fd->fd, iov, iov_len) == -1) {
-		if (errno != EPIPE && errno != ENOTCONN) {
-			// We don't get ELE_HANGUP for some reason
+	done = control_write_data(fd->fd, data);
+	if (done == -1) {
+		if (fd->flags & FD_OUTPUT_ONLY)
+			logerr("%s: event listener fd %d write", __func__, fd->fd);
+		else if (errno != EPIPE && errno != ENOTCONN) {
+			/* We don't get ELE_HANGUP for some reason. */
 			logerr("%s: write", __func__);
 		}
 		control_hangup(fd);
 		return -1;
 	}
+	if (done == 0)
+		return 0;
 
 	TAILQ_REMOVE(&fd->queue, data, next);
 #ifdef CTL_FREE_LIST
@@ -194,10 +192,13 @@ control_handle_write(struct fd_list *fd)
 	}
 #endif
 
-	/* Done sending data, stop watching write to fd */
+	/* Done sending data, stop watching write to fd. */
 	if (eloop_event_add(fd->ctx->eloop, fd->fd, ELE_READ,
-	    control_handle_data, fd) == -1)
+	    control_handle_data, fd) == -1) {
 		logerr("%s: eloop_event_add", __func__);
+		control_hangup(fd);
+		return -1;
+	}
 	return 0;
 }
 
@@ -212,6 +213,15 @@ control_handle_data(void *arg, unsigned short events)
 	if (events & ELE_WRITE && !(events & ELE_HANGUP)) {
 		if (control_handle_write(fd) == -1)
 			return;
+	}
+	if (fd->flags & FD_OUTPUT_ONLY) {
+		if (events & ELE_READ) {
+			logerrx("%s: unexpected input on output-only fd %d",
+			    __func__, fd->fd);
+			control_hangup(fd);
+		} else if (events & ELE_HANGUP)
+			control_hangup(fd);
+		return;
 	}
 	if (events & ELE_READ) {
 		if (control_handle_read(fd) == -1)
@@ -321,12 +331,12 @@ control_add_listener(struct dhcpcd_ctx *ctx, int fd)
 		goto error;
 
 	/* Match the framing normally added before events cross privsep. */
-	l = control_new(ctx, fd, FD_LISTEN | FD_SENDLEN);
+	l = control_new(ctx, fd,
+	    FD_LISTEN | FD_SENDLEN | FD_OUTPUT_ONLY);
 	if (l == NULL)
 		goto error;
 	if (eloop_event_add(ctx->eloop, fd, ELE_READ,
-	    control_handle_data, l) == -1)
-	{
+	    control_handle_data, l) == -1) {
 		int saved_errno = errno;
 
 		control_free(l);
@@ -649,8 +659,10 @@ control_queue(struct fd_list *fd, void *data, size_t data_len)
 #endif
 	{
 		d = calloc(1, sizeof(*d));
-		if (d == NULL)
+		if (d == NULL) {
+			logerr("%s: calloc event for fd %d", __func__, fd->fd);
 			return -1;
+		}
 	}
 
 	if (d->data_size == 0)
@@ -658,6 +670,7 @@ control_queue(struct fd_list *fd, void *data, size_t data_len)
 	if (d->data_size < data_len) {
 		void *nbuf = realloc(d->data, data_len);
 		if (nbuf == NULL) {
+			logerr("%s: realloc event for fd %d", __func__, fd->fd);
 			free(d->data);
 			free(d);
 			return -1;
@@ -667,12 +680,18 @@ control_queue(struct fd_list *fd, void *data, size_t data_len)
 	}
 	memcpy(d->data, data, data_len);
 	d->data_len = data_len;
+	d->data_offset = 0;
 	d->data_flags = fd->flags & FD_SENDLEN;
 
 	TAILQ_INSERT_TAIL(&fd->queue, d, next);
 	events = ELE_WRITE;
 	if (fd->flags & FD_LISTEN)
 		events |= ELE_READ;
-	return eloop_event_add(fd->ctx->eloop, fd->fd, events,
-	    control_handle_data, fd);
+	if (eloop_event_add(fd->ctx->eloop, fd->fd, events,
+	    control_handle_data, fd) == -1) {
+		logerr("%s: eloop_event_add fd %d with queued data",
+		    __func__, fd->fd);
+		return -1;
+	}
+	return 0;
 }

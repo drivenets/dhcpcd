@@ -1,4 +1,4 @@
-SUBDIRS=	crypt eloop-bench
+SUBDIRS=	crypt eloop-bench control-write
 
 .PHONY:	test-listen-fd
 

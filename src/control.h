@@ -47,6 +47,7 @@ struct fd_data {
 	void *data;
 	size_t data_size;
 	size_t data_len;
+	size_t data_offset;
 	unsigned int data_flags;
 };
 TAILQ_HEAD(fd_data_head, fd_data);
@@ -66,6 +67,7 @@ TAILQ_HEAD(fd_list_head, fd_list);
 #define	FD_LISTEN	0x01U
 #define	FD_UNPRIV	0x02U
 #define	FD_SENDLEN	0x04U
+#define	FD_OUTPUT_ONLY	0x08U
 
 int control_start(struct dhcpcd_ctx *, const char *, sa_family_t);
 int control_stop(struct dhcpcd_ctx *);
@@ -73,6 +75,7 @@ int control_open(const char *, sa_family_t, bool);
 ssize_t control_send(struct dhcpcd_ctx *, int, char * const *);
 struct fd_list *control_new(struct dhcpcd_ctx *, int, unsigned int);
 int control_add_listener(struct dhcpcd_ctx *, int);
+int control_write_data(int, struct fd_data *);
 void control_free(struct fd_list *);
 void control_delete(struct fd_list *);
 int control_queue(struct fd_list *, void *, size_t);
