@@ -75,7 +75,6 @@ int control_open(const char *, sa_family_t, bool);
 ssize_t control_send(struct dhcpcd_ctx *, int, char * const *);
 struct fd_list *control_new(struct dhcpcd_ctx *, int, unsigned int);
 int control_add_listener(struct dhcpcd_ctx *, int);
-int control_write_data(int, struct fd_data *);
 void control_free(struct fd_list *);
 void control_delete(struct fd_list *);
 int control_queue(struct fd_list *, void *, size_t);

@@ -33,6 +33,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -155,24 +156,64 @@ control_handle_read(struct fd_list *fd)
 static int
 control_handle_write(struct fd_list *fd)
 {
+	struct iovec iov[2];
 	struct fd_data *data;
-	int done;
+	size_t prefix_len, total_len, offset;
+	ssize_t written;
+	int iovcnt;
 
 	data = TAILQ_FIRST(&fd->queue);
-	done = control_write_data(fd->fd, data);
-	if (done == -1) {
-		if (fd->flags & FD_OUTPUT_ONLY)
-			logerr("%s: event listener fd %d write", __func__, fd->fd);
-		else if (errno != EPIPE && errno != ENOTCONN) {
-			/* We don't get ELE_HANGUP for some reason. */
-			logerr("%s: write", __func__);
-		}
-		control_hangup(fd);
-		return -1;
+	if (data == NULL || data->data == NULL || data->data_len == 0) {
+		errno = EINVAL;
+		goto write_error;
 	}
-	if (done == 0)
+	prefix_len = data->data_flags & FD_SENDLEN ? sizeof(data->data_len) : 0;
+	if (data->data_len > SIZE_MAX - prefix_len) {
+		errno = EOVERFLOW;
+		goto write_error;
+	}
+	total_len = prefix_len + data->data_len;
+	if (data->data_offset > total_len) {
+		errno = EINVAL;
+		goto write_error;
+	}
+	if (data->data_offset == total_len)
+		goto write_complete;
+
+	/* data_offset includes the optional length prefix. */
+	offset = data->data_offset;
+	if (offset < prefix_len) {
+		iov[0].iov_base = (char *)&data->data_len + offset;
+		iov[0].iov_len = prefix_len - offset;
+		iov[1].iov_base = data->data;
+		iov[1].iov_len = data->data_len;
+		iovcnt = 2;
+	} else {
+		offset -= prefix_len;
+		iov[0].iov_base = (char *)data->data + offset;
+		iov[0].iov_len = data->data_len - offset;
+		iovcnt = 1;
+	}
+
+	written = writev(fd->fd, iov, iovcnt);
+	if (written == -1) {
+		if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+			return 0;
+		goto write_error;
+	}
+	if (written == 0) {
+		errno = EPIPE;
+		goto write_error;
+	}
+	if ((size_t)written > total_len - data->data_offset) {
+		errno = EIO;
+		goto write_error;
+	}
+	data->data_offset += (size_t)written;
+	if (data->data_offset != total_len)
 		return 0;
 
+write_complete:
 	TAILQ_REMOVE(&fd->queue, data, next);
 #ifdef CTL_FREE_LIST
 	TAILQ_INSERT_TAIL(&fd->free_queue, data, next);
@@ -200,6 +241,16 @@ control_handle_write(struct fd_list *fd)
 		return -1;
 	}
 	return 0;
+
+write_error:
+	if (fd->flags & FD_OUTPUT_ONLY)
+		logerr("%s: event listener fd %d write", __func__, fd->fd);
+	else if (errno != EPIPE && errno != ENOTCONN) {
+		/* We don't get ELE_HANGUP for some reason. */
+		logerr("%s: write", __func__);
+	}
+	control_hangup(fd);
+	return -1;
 }
 
 static void
