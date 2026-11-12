@@ -175,6 +175,7 @@ struct dhcpcd_ctx {
 
 	int control_fd;
 	int control_unpriv_fd;
+	int control_listen_fd;
 	struct fd_list_head control_fds;
 	char control_sock[sizeof(CONTROLSOCKET) + IF_NAMESIZE];
 	char control_sock_unpriv[sizeof(CONTROLSOCKET) + IF_NAMESIZE + 7];

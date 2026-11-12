@@ -124,6 +124,7 @@ printf("usage: "PACKAGE"\t[-146ABbDdEGgHJKLMNPpqTV]\n"
 	"\t\t[--routingtableid routingtableid]\n"
 	"\t\t[--maxbackofftimer maxbackofftimer]\n"
 	"\t\t[--dhcpv4cos dhcpv4cos]\n"
+		"\t\t[--listen-fd=fd]\n"
 	"       "PACKAGE"\t-n, --rebind [interface]\n"
 	"       "PACKAGE"\t-k, --release [interface]\n"
 	"       "PACKAGE"\t-U, --dumplease interface\n"
@@ -1988,6 +1989,7 @@ main(int argc, char **argv, char **envp)
 #endif
 
 	TAILQ_INIT(&ctx.control_fds);
+	ctx.control_listen_fd = -1;
 #ifdef USE_SIGNALS
 	ctx.fork_fd = -1;
 #endif
@@ -2329,6 +2331,11 @@ printpidfile:
 			ctx.control_fd = control_open(NULL, AF_UNSPEC,
 			    ctx.options & DHCPCD_DUMPLEASE);
 		if (ctx.control_fd != -1) {
+			if (ctx.control_listen_fd != -1) {
+				logerrx("--listen-fd cannot attach to an already-running "
+				    PACKAGE);
+				goto exit_failure;
+			}
 #ifdef PRIVSEP
 			if (IN_PRIVSEP(&ctx) &&
 			    ps_managersandbox(&ctx, NULL) == -1)
@@ -2441,6 +2448,10 @@ printpidfile:
 		ctx.options |= DHCPCD_FORKED | DHCPCD_LAUNCHER;
 		ctx.fork_fd = fork_fd[0];
 		close(fork_fd[1]);
+		if (ctx.control_listen_fd != -1) {
+			close(ctx.control_listen_fd);
+			ctx.control_listen_fd = -1;
+		}
 #ifdef PRIVSEP_RIGHTS
 		if (ps_rights_limit_fd(ctx.fork_fd) == -1) {
 			logerr("ps_rights_limit_fd");
@@ -2486,9 +2497,24 @@ start_manager:
 		logerr("ps_start");
 		goto exit_failure;
 	}
-	if (ctx.options & DHCPCD_FORKED)
+	if (ctx.options & DHCPCD_FORKED) {
+		if (ctx.control_listen_fd != -1) {
+			close(ctx.control_listen_fd);
+			ctx.control_listen_fd = -1;
+		}
 		goto run_loop;
+	}
 #endif
+
+	if (ctx.control_listen_fd != -1) {
+		int fd = ctx.control_listen_fd;
+
+		ctx.control_listen_fd = -1;
+		if (control_add_listener(&ctx, fd) == -1) {
+			logerr("%s: control_add_listener", __func__);
+			goto exit_failure;
+		}
+	}
 
 	if (!(ctx.options & DHCPCD_TEST)) {
 		if (control_start(&ctx,
@@ -2656,6 +2682,10 @@ exit_failure:
 exit1:
 	if (!(ctx.options & DHCPCD_TEST) && control_stop(&ctx) == -1)
 		logerr("%s: control_stop", __func__);
+	if (ctx.control_listen_fd != -1) {
+		close(ctx.control_listen_fd);
+		ctx.control_listen_fd = -1;
+	}
 	if_freeifaddrs(&ctx, &ifaddrs);
 #ifdef PRIVSEP
 	ps_stop(&ctx);

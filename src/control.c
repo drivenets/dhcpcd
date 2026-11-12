@@ -33,6 +33,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,9 +97,16 @@ control_free(struct fd_list *fd)
 static void
 control_hangup(struct fd_list *fd)
 {
+	if (fd->flags & FD_OUTPUT_ONLY) {
+		if (TAILQ_FIRST(&fd->queue) != NULL)
+			logerrx("event listener fd %d disconnected with queued data",
+			    fd->fd);
+		else
+			logdebugx("event listener fd %d disconnected", fd->fd);
+	}
 
 #ifdef PRIVSEP
-	if (IN_PRIVSEP(fd->ctx)) {
+	if (IN_PRIVSEP(fd->ctx) && !(fd->flags & FD_OUTPUT_ONLY)) {
 		if (ps_ctl_sendeof(fd) == -1)
 			logerr(__func__);
 	}
@@ -149,32 +157,63 @@ static int
 control_handle_write(struct fd_list *fd)
 {
 	struct iovec iov[2];
-	int iov_len;
 	struct fd_data *data;
+	size_t prefix_len, total_len, offset;
+	ssize_t written;
+	int iovcnt;
 
 	data = TAILQ_FIRST(&fd->queue);
+	if (data == NULL || data->data == NULL || data->data_len == 0) {
+		errno = EINVAL;
+		goto write_error;
+	}
+	prefix_len = data->data_flags & FD_SENDLEN ? sizeof(data->data_len) : 0;
+	if (data->data_len > SIZE_MAX - prefix_len) {
+		errno = EOVERFLOW;
+		goto write_error;
+	}
+	total_len = prefix_len + data->data_len;
+	if (data->data_offset > total_len) {
+		errno = EINVAL;
+		goto write_error;
+	}
+	if (data->data_offset == total_len)
+		goto write_complete;
 
-	if (data->data_flags & FD_SENDLEN) {
-		iov[0].iov_base = &data->data_len;
-		iov[0].iov_len = sizeof(size_t);
+	/* data_offset includes the optional length prefix. */
+	offset = data->data_offset;
+	if (offset < prefix_len) {
+		iov[0].iov_base = (char *)&data->data_len + offset;
+		iov[0].iov_len = prefix_len - offset;
 		iov[1].iov_base = data->data;
 		iov[1].iov_len = data->data_len;
-		iov_len = 2;
+		iovcnt = 2;
 	} else {
-		iov[0].iov_base = data->data;
-		iov[0].iov_len = data->data_len;
-		iov_len = 1;
+		offset -= prefix_len;
+		iov[0].iov_base = (char *)data->data + offset;
+		iov[0].iov_len = data->data_len - offset;
+		iovcnt = 1;
 	}
 
-	if (writev(fd->fd, iov, iov_len) == -1) {
-		if (errno != EPIPE && errno != ENOTCONN) {
-			// We don't get ELE_HANGUP for some reason
-			logerr("%s: write", __func__);
-		}
-		control_hangup(fd);
-		return -1;
+	written = writev(fd->fd, iov, iovcnt);
+	if (written == -1) {
+		if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+			return 0;
+		goto write_error;
 	}
+	if (written == 0) {
+		errno = EPIPE;
+		goto write_error;
+	}
+	if ((size_t)written > total_len - data->data_offset) {
+		errno = EIO;
+		goto write_error;
+	}
+	data->data_offset += (size_t)written;
+	if (data->data_offset != total_len)
+		return 0;
 
+write_complete:
 	TAILQ_REMOVE(&fd->queue, data, next);
 #ifdef CTL_FREE_LIST
 	TAILQ_INSERT_TAIL(&fd->free_queue, data, next);
@@ -194,11 +233,24 @@ control_handle_write(struct fd_list *fd)
 	}
 #endif
 
-	/* Done sending data, stop watching write to fd */
+	/* Done sending data, stop watching write to fd. */
 	if (eloop_event_add(fd->ctx->eloop, fd->fd, ELE_READ,
-	    control_handle_data, fd) == -1)
+	    control_handle_data, fd) == -1) {
 		logerr("%s: eloop_event_add", __func__);
+		control_hangup(fd);
+		return -1;
+	}
 	return 0;
+
+write_error:
+	if (fd->flags & FD_OUTPUT_ONLY)
+		logerr("%s: event listener fd %d write", __func__, fd->fd);
+	else if (errno != EPIPE && errno != ENOTCONN) {
+		/* We don't get ELE_HANGUP for some reason. */
+		logerr("%s: write", __func__);
+	}
+	control_hangup(fd);
+	return -1;
 }
 
 static void
@@ -212,6 +264,15 @@ control_handle_data(void *arg, unsigned short events)
 	if (events & ELE_WRITE && !(events & ELE_HANGUP)) {
 		if (control_handle_write(fd) == -1)
 			return;
+	}
+	if (fd->flags & FD_OUTPUT_ONLY) {
+		if (events & ELE_READ) {
+			logerrx("%s: unexpected input on output-only fd %d",
+			    __func__, fd->fd);
+			control_hangup(fd);
+		} else if (events & ELE_HANGUP)
+			control_hangup(fd);
+		return;
 	}
 	if (events & ELE_READ) {
 		if (control_handle_read(fd) == -1)
@@ -294,6 +355,50 @@ control_new(struct dhcpcd_ctx *ctx, int fd, unsigned int flags)
 #endif
 	TAILQ_INSERT_TAIL(&ctx->control_fds, l, next);
 	return l;
+}
+
+int
+control_add_listener(struct dhcpcd_ctx *ctx, int fd)
+{
+	struct sockaddr_storage peer;
+	socklen_t len;
+	struct fd_list *l;
+	int flags, type;
+
+	len = sizeof(type);
+	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) == -1)
+		goto error;
+	if (type != SOCK_STREAM) {
+		errno = EPROTOTYPE;
+		goto error;
+	}
+	len = sizeof(peer);
+	if (getpeername(fd, (struct sockaddr *)&peer, &len) == -1)
+		goto error;
+	if ((flags = fcntl(fd, F_GETFD, 0)) == -1 ||
+	    fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == -1 ||
+	    (flags = fcntl(fd, F_GETFL, 0)) == -1 ||
+	    fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+		goto error;
+
+	/* Match the framing normally added before events cross privsep. */
+	l = control_new(ctx, fd,
+	    FD_LISTEN | FD_SENDLEN | FD_OUTPUT_ONLY);
+	if (l == NULL)
+		goto error;
+	if (eloop_event_add(ctx->eloop, fd, ELE_READ,
+	    control_handle_data, l) == -1) {
+		int saved_errno = errno;
+
+		control_free(l);
+		errno = saved_errno;
+		return -1;
+	}
+	return 0;
+
+error:
+	close(fd);
+	return -1;
 }
 
 static void
@@ -605,8 +710,10 @@ control_queue(struct fd_list *fd, void *data, size_t data_len)
 #endif
 	{
 		d = calloc(1, sizeof(*d));
-		if (d == NULL)
+		if (d == NULL) {
+			logerr("%s: calloc event for fd %d", __func__, fd->fd);
 			return -1;
+		}
 	}
 
 	if (d->data_size == 0)
@@ -614,6 +721,7 @@ control_queue(struct fd_list *fd, void *data, size_t data_len)
 	if (d->data_size < data_len) {
 		void *nbuf = realloc(d->data, data_len);
 		if (nbuf == NULL) {
+			logerr("%s: realloc event for fd %d", __func__, fd->fd);
 			free(d->data);
 			free(d);
 			return -1;
@@ -623,12 +731,18 @@ control_queue(struct fd_list *fd, void *data, size_t data_len)
 	}
 	memcpy(d->data, data, data_len);
 	d->data_len = data_len;
+	d->data_offset = 0;
 	d->data_flags = fd->flags & FD_SENDLEN;
 
 	TAILQ_INSERT_TAIL(&fd->queue, d, next);
 	events = ELE_WRITE;
 	if (fd->flags & FD_LISTEN)
 		events |= ELE_READ;
-	return eloop_event_add(fd->ctx->eloop, fd->fd, events,
-	    control_handle_data, fd);
+	if (eloop_event_add(fd->ctx->eloop, fd->fd, events,
+	    control_handle_data, fd) == -1) {
+		logerr("%s: eloop_event_add fd %d with queued data",
+		    __func__, fd->fd);
+		return -1;
+	}
+	return 0;
 }
